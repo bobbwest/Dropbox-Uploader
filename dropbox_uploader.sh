@@ -263,6 +263,7 @@ function usage
 
     echo -e "\t upload   <LOCAL_FILE/DIR ...>  <REMOTE_FILE/DIR>"
     echo -e "\t download <REMOTE_FILE/DIR> [LOCAL_FILE/DIR]"
+    echo -e "\t compare  <LOCAL_FILE/DIR ...>  <REMOTE_FILE/DIR>"
     echo -e "\t delete   <REMOTE_FILE/DIR>"
     echo -e "\t move     <REMOTE_FILE/DIR> <REMOTE_FILE/DIR>"
     echo -e "\t copy     <REMOTE_FILE/DIR> <REMOTE_FILE/DIR>"
@@ -868,6 +869,141 @@ function db_download_file
         return
     fi
 }
+
+## start of compare ################################################################################
+#Generic compare wrapper around db_compare_file and db_compare_dir functions
+#$1 = Local source file/dir
+#$2 = Remote destination file/dir
+function db_compare
+{
+    local SRC=$(normalize_path "$1")
+    local DST=$(normalize_path "$2")
+
+    for j in "${EXCLUDE[@]}"
+        do :
+            if [[ $(echo "$SRC" | grep "$j" | wc -l) -gt 0 ]]; then
+                print "Skipping excluded file/dir: "$j
+                return
+            fi
+    done
+
+    #Checking if the file/dir exists
+    if [[ ! -e $SRC && ! -d $SRC ]]; then
+        print " > No such file or directory: $SRC\n"
+        ERROR_STATUS=1
+        return
+    fi
+
+    #Checking if the file/dir has read permissions
+    if [[ ! -r $SRC ]]; then
+        print " > Error reading file $SRC: permission denied\n"
+        ERROR_STATUS=1
+        return
+    fi
+
+    TYPE=$(db_stat "$DST")
+
+    #If DST it's a file, do nothing, it's the default behaviour
+    if [[ $TYPE == "FILE" ]]; then
+        DST="$DST"
+
+    #if DST doesn't exist, we can't compare the local file with anything
+    elif [[ $TYPE == "ERR" ]]; then
+        print " > Remote \"$DST\" does not exist\n"
+        ERROR_STATUS=1
+	return
+
+    #if DST doesn't exists and ends with a /, it will be the destination folder
+    elif [[ $TYPE == "ERR" && "${DST: -1}" == "/" ]]; then
+        local filename=$(basename "$SRC")
+        DST="$DST/$filename"
+
+    #If DST it's a directory, it will be the destination folder
+    elif [[ $TYPE == "DIR" ]]; then
+        local filename=$(basename "$SRC")
+        DST="$DST/$filename"
+    fi
+
+    #It's a directory
+    if [[ -d $SRC ]]; then
+        db_compare_dir "$SRC" "$DST"
+
+    #It's a file
+    elif [[ -e $SRC ]]; then
+        db_compare_file "$SRC" "$DST"
+
+    #Unsupported object...
+    else
+        print " > Skipping not regular file \"$SRC\"\n"
+    fi
+}
+
+#Compare checksums of local and remote files
+#The final upload function will be choosen based on the file size
+#$1 = Local source file
+#$2 = Remote destination file
+function db_compare_file
+{
+    local FILE_SRC=$(normalize_path "$1")
+    local FILE_DST=$(normalize_path "$2")
+
+    shopt -s nocasematch
+
+    #Checking not allowed file names
+    basefile_dst=$(basename "$FILE_DST")
+    if [[ $basefile_dst == "thumbs.db" || \
+          $basefile_dst == "desktop.ini" || \
+          $basefile_dst == ".ds_store" || \
+          $basefile_dst == "icon\r" || \
+          $basefile_dst == ".dropbox" || \
+          $basefile_dst == ".dropbox.attr" \
+       ]]; then
+        print " > Skipping not allowed file name \"$FILE_DST\"\n"
+        return
+    fi
+
+    shopt -u nocasematch
+
+    #Checking file size
+    FILE_SIZE=$(file_size "$FILE_SRC")
+
+    #Checking if the file already exists
+    TYPE=$(db_stat "$FILE_DST")
+    if [[ $TYPE != "FILE" ]]; then
+        print " > Skipping non-existent remote file \"$FILE_DST\"\n"
+        return
+    fi
+
+    # Checking if the file has the correct check sum
+    print " >>> Generating SHA for local file \"$FILE_SRC\"\n"
+    sha_src=$(db_sha_local "$FILE_SRC")
+    print " >>> SHA for local file \"$FILE_SRC\" == $sha_src\n"
+    print " >>> Obtaining SHA for remove file \"$FILE_DST\"\n"
+    sha_dst=$(db_sha "$FILE_DST")
+    print " >>> SHA for remove file \"$FILE_DST\" == $sha_dst\n"
+    if [[ $sha_src == $sha_dst && $sha_src != "ERR" ]]; then
+	print "> File \"$FILE_SRC\" has the same hash as the remote\n"
+    else
+	print "> File \"$FILE_SRC\" has different hash than the remote\n"
+	# file checksums did not match
+	ERROR_STATUS=1
+    fi
+}
+
+#Directory compare
+#$1 = Local source dir
+#$2 = Remote destination dir
+function db_compare_dir
+{
+    local DIR_SRC=$(normalize_path "$1")
+    local DIR_DST=$(normalize_path "$2")
+
+    for file in "$DIR_SRC/"*; do
+        db_compare "$file" "$DIR_DST"
+    done
+}
+
+## end of compare ##################################################################################
 
 #Saveurl
 #$1 = URL
@@ -1614,6 +1750,21 @@ case $COMMAND in
         FILE_DST="$ARG2"
 
         db_download "/$FILE_SRC" "$FILE_DST"
+
+    ;;
+
+    compare)
+
+        if [[ $argnum -lt 2 ]]; then
+            usage
+        fi
+
+        FILE_DST="${*:$#:1}"
+
+        for (( i=OPTIND+1; i<$#; i++ )); do
+            FILE_SRC="${*:$i:1}"
+            db_compare "$FILE_SRC" "/$FILE_DST"
+        done
 
     ;;
 
