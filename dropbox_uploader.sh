@@ -1622,20 +1622,11 @@ function db_sha_local
         echo "ERR: missing perl"
         return
     fi
-    perl -MDigest::SHA -e '1;' > /dev/null
+    perl -MDigest::SHA -e '1;' > /dev/null 2>&1
     if [[ $? != 0 ]]; then
-        echo "ERR: missing Digest::SHA"
+        echo "ERR: missing perl module Digest::SHA"
         return
     fi
-
-    while ([[ $OFFSET -lt "$FILE_SIZE" ]]); do
-        dd if="$FILE" of="$CHUNK_FILE" bs=4194304 skip=$SKIP count=1 2> /dev/null
-        local SHA=$(shasum -a 256 "$CHUNK_FILE" | awk '{print $1}')
-        SHA_CONCAT="${SHA_CONCAT}${SHA}"
-
-        let OFFSET=$OFFSET+4194304
-        let SKIP=$SKIP+1
-    done
 
     perl -Mstrict -Mwarnings -MDigest::SHA=sha256,sha256_hex -e '
       my $file = shift;
