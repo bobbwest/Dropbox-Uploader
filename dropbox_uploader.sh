@@ -1485,9 +1485,14 @@ function db_sha_local
     local SKIP=0
     local SHA_CONCAT=""
 
-    which shasum > /dev/null
+    which perl > /dev/null
     if [[ $? != 0 ]]; then
-        echo "ERR"
+        echo "ERR: missing perl"
+        return
+    fi
+    perl -MDigest::SHA -e '1;' > /dev/null
+    if [[ $? != 0 ]]; then
+        echo "ERR: missing Digest::SHA"
         return
     fi
 
@@ -1500,8 +1505,16 @@ function db_sha_local
         let SKIP=$SKIP+1
     done
 
-    shaHex=$(echo $SHA_CONCAT | sed 's/\([0-9A-F]\{2\}\)/\\x\1/gI')
-    echo -ne $shaHex | shasum -a 256 | awk '{print $1}'
+    perl -Mstrict -Mwarnings -MDigest::SHA=sha256,sha256_hex -e '
+      my $file = shift;
+      open(my $fh, q{<}, $file) or die;
+      my $block;
+      my $cksum;
+      while (read $fh, $block, 4194304) {
+	$cksum .= sha256($block);
+      };
+      print sha256_hex($cksum), "\n"
+    ' "$FILE"
 }
 
 ################
