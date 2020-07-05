@@ -1770,7 +1770,7 @@ esac
 remove_temp_files
 
 if [[ $ERROR_STATUS -ne 0 ]]; then
-    echo "Some error occured. Please check the log."
+    print "Some error occured. Please check the log.\n"
 fi
 
 exit $ERROR_STATUS
