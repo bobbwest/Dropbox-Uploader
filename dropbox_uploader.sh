@@ -975,16 +975,12 @@ function db_compare_file
     fi
 
     # Checking if the file has the correct check sum
-    print " >>> Generating SHA for local file \"$FILE_SRC\"\n"
     sha_src=$(db_sha_local "$FILE_SRC")
-    print " >>> SHA for local file \"$FILE_SRC\" == $sha_src\n"
-    print " >>> Obtaining SHA for remove file \"$FILE_DST\"\n"
     sha_dst=$(db_sha "$FILE_DST")
-    print " >>> SHA for remove file \"$FILE_DST\" == $sha_dst\n"
     if [[ $sha_src == $sha_dst && $sha_src != "ERR" ]]; then
 	print "> File \"$FILE_SRC\" has the same hash as the remote\n"
     else
-	print "> File \"$FILE_SRC\" has different hash than the remote\n"
+	print "> File \"$FILE_SRC\" has different hash from the remote\n"
 	# file checksums did not match
 	ERROR_STATUS=1
     fi
